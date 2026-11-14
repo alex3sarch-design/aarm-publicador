@@ -778,6 +778,9 @@ def probar() -> None:
         resumen(f"✅ Permiso de publicación activo (uso en 24 h: {lim.get('data', [{}])[0].get('quota_usage', '?')})")
     except ErrorIG as e:
         resumen(f"⚠️ No pude consultar el límite de publicación: {e}")
+    recientes = ig("GET", f"{ig_id}/media", token, fields="id,caption,timestamp", limit="30").get("data", [])
+    resumen(f"✅ Puedo leer tus últimos posts para evitar duplicados ({len(recientes)} leídos; el más reciente: "
+            f"{(recientes[0].get('caption') or '')[:60]!r})" if recientes else "⚠️ No pude leer posts recientes")
     esperar_urls(plan)
     u34, u45 = (m["url"] for m in plan[0]["medios"])
     for nombre, url in (("3:4 (1080×1440)", u34), ("4:5 con franjas", u45)):

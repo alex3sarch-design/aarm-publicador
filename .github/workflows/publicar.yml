@@ -89,6 +89,8 @@ jobs:
       CLAVE_TOKEN: ${{ secrets.CLAVE_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # siempre lo más reciente, no el commit de cuando se disparó
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

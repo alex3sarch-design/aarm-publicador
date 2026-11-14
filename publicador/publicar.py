@@ -110,18 +110,51 @@ def escribir_json(ruta: Path, datos) -> None:
     ruta.write_text(json.dumps(datos, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def guardar_en_repo(mensaje: str, *rutas: Path) -> None:
-    """Hace commit y push de los archivos de estado (solo dentro de GitHub Actions)."""
+def _git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=RAIZ, check=check, capture_output=True, text=True)
+
+
+def estado_fresco() -> dict:
+    """Trae el estado MÁS RECIENTE de main antes de decidir nada.
+
+    Las ejecuciones de GitHub arrancan con el commit que había cuando se dispararon, que puede
+    estar viejo si otra ejecución publicó mientras tanto. Por eso siempre se vuelve a leer.
+    """
+    if os.environ.get("GITHUB_ACTIONS"):
+        for intento in range(4):
+            if _git("fetch", "--quiet", "origin", "main", check=False).returncode == 0:
+                _git("checkout", "--quiet", "origin/main", "--", "estado")
+                break
+            time.sleep(5 * (intento + 1))
+        else:
+            raise RuntimeError("No pude leer el estado más reciente del repositorio; no publico nada por seguridad.")
+    return leer_json(PUBLICADOS, {})
+
+
+def guardar_en_repo(mensaje: str, *rutas: Path, cambio=None) -> None:
+    """Guarda archivos de estado en main sin pisar lo que otra ejecución haya guardado.
+
+    Si se pasa `cambio` (función que recibe el dict de publicados y lo modifica), se aplica
+    sobre el estado más reciente de main en cada intento.
+    """
     if not os.environ.get("GITHUB_ACTIONS"):
+        if cambio:
+            datos = leer_json(PUBLICADOS, {}); cambio(datos); escribir_json(PUBLICADOS, datos)
         return
     rel = [str(r.relative_to(RAIZ)) for r in rutas]
-    subprocess.run(["git", "add", *rel], cwd=RAIZ, check=True)
-    if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=RAIZ).returncode == 0:
-        return
-    subprocess.run(["git", "commit", "-m", mensaje], cwd=RAIZ, check=True)
-    for intento in range(4):
-        subprocess.run(["git", "pull", "--rebase", "--quiet"], cwd=RAIZ)
-        if subprocess.run(["git", "push", "--quiet"], cwd=RAIZ).returncode == 0:
+    for intento in range(6):
+        _git("fetch", "--quiet", "origin", "main", check=False)
+        _git("reset", "--quiet", "origin/main", check=False)  # índice = main más reciente; solo se añade estado/
+        if cambio:
+            _git("checkout", "--quiet", "origin/main", "--", "estado/publicados.json", check=False)
+            datos = leer_json(PUBLICADOS, {})
+            cambio(datos)
+            escribir_json(PUBLICADOS, datos)
+        _git("add", *rel)
+        if _git("diff", "--cached", "--quiet", check=False).returncode == 0:
+            return
+        _git("commit", "--quiet", "-m", mensaje)
+        if _git("push", "--quiet", "origin", "HEAD:main", check=False).returncode == 0:
             return
         time.sleep(5 * (intento + 1))
     raise RuntimeError("No se pudo guardar el estado en el repositorio.")
@@ -428,16 +461,17 @@ class ErrorIG(Exception):
         return e.get("error_subcode") in (2207009,) or "aspect ratio" in texto
 
 
-def ig(metodo: str, ruta: str, token: str, **params) -> dict:
+def ig(metodo: str, ruta: str, token: str, reintentar: bool = True, **params) -> dict:
     url = f"{api_base(token)}/{ruta}"
-    for intento in range(3):
+    intentos = 3 if reintentar else 1
+    for intento in range(intentos):
         try:
             if metodo == "GET":
                 r = requests.get(url, params={**params, "access_token": token}, timeout=120)
             else:
                 r = requests.post(url, data={**params, "access_token": token}, timeout=120)
         except requests.RequestException as e:
-            if intento == 2:
+            if intento == intentos - 1:
                 raise ErrorIG(str(e))
             time.sleep(10)
             continue
@@ -448,7 +482,7 @@ def ig(metodo: str, ruta: str, token: str, **params) -> dict:
         if r.status_code == 200 and "error" not in j:
             return j
         err = j.get("error", {})
-        if err.get("is_transient") and intento < 2:
+        if err.get("is_transient") and intento < intentos - 1:
             time.sleep(20)
             continue
         raise ErrorIG(j)
@@ -523,6 +557,27 @@ def crear_contenedores(post: dict, ig_id: str, token: str, usar_franjas: bool) -
     return cid
 
 
+def _normal(t: str) -> str:
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFC", t or "")).strip()
+
+
+def ya_en_instagram(post: dict, ig_id: str, token: str) -> str | None:
+    """Busca en los últimos posts de la cuenta uno con el mismo texto (últimos 7 días)."""
+    texto = _normal(post.get("texto", ""))
+    if len(texto) < 20:
+        return None
+    datos = ig("GET", f"{ig_id}/media", token, fields="id,caption,timestamp", limit="30").get("data", [])
+    limite = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
+    for m in datos:
+        try:
+            cuando = dt.datetime.strptime(m.get("timestamp", ""), "%Y-%m-%dT%H:%M:%S%z")
+        except ValueError:
+            continue
+        if cuando >= limite and _normal(m.get("caption", "")) == texto:
+            return str(m["id"])
+    return None
+
+
 def publicar_un_post(post: dict, ig_id: str, token: str) -> str:
     hay_franjas = any(m.get("url_franjas") for m in post["medios"])
     try:
@@ -534,12 +589,16 @@ def publicar_un_post(post: dict, ig_id: str, token: str) -> str:
         cid = crear_contenedores(post, ig_id, token, usar_franjas=True)
     for intento in range(3):
         try:
-            return ig("POST", f"{ig_id}/media_publish", token, creation_id=cid)["id"]
+            # Una sola llamada: nunca se repite automáticamente una publicación.
+            return ig("POST", f"{ig_id}/media_publish", token, reintentar=False, creation_id=cid)["id"]
         except ErrorIG:
-            # Antes de reintentar, comprobar que no se haya publicado ya (evita duplicados).
-            time.sleep(30)
+            # Antes de reintentar, comprobar dos veces que no se haya publicado ya.
+            time.sleep(45)
             if ig("GET", cid, token, fields="status_code").get("status_code") == "PUBLISHED":
-                return ig("GET", cid, token, fields="id").get("id", cid)
+                return ya_en_instagram(post, ig_id, token) or cid
+            existente = ya_en_instagram(post, ig_id, token)
+            if existente:
+                return existente
             if intento == 2:
                 raise
     raise ErrorIG("No se pudo publicar")
@@ -548,7 +607,7 @@ def publicar_un_post(post: dict, ig_id: str, token: str) -> str:
 # ----------------------------------------------------------------- comandos
 
 def preparar() -> None:
-    publicados = leer_json(PUBLICADOS, {})
+    publicados = estado_fresco()
     posts, avisos = posts_de_semanas()
     for a in avisos:
         resumen(f"⚠️ {a}")
@@ -606,7 +665,10 @@ def preparar() -> None:
             (destino / f"p{p['numero']}_portada.jpg").write_bytes(original)
             portada_url = f"{base}/p{p['numero']}_portada.jpg"
         tipo = tipo_de(c["medios"])
+        anteriores = [{"id": a["id"], "numero": a["numero"], "nombre": a["nombre"]}
+                      for a in del_dia if a["numero"] < p["numero"]]
         plan.append({**p, "tipo": tipo, "texto": texto, "medios": medios, "portada_url": portada_url,
+                     "anteriores": anteriores,
                      "hora": hora_de_slot(fecha, p["slot"]).isoformat()})
         resumen(f"- Preparado {p['numero']} · {tipo} · {len(medios)} archivo(s) · {hora_de_slot(fecha, p['slot']):%H:%M} · {p['nombre']}")
     escribir_json(PLAN, plan)
@@ -630,15 +692,12 @@ def publicar() -> None:
     if not plan:
         log("No hay plan que publicar.")
         return
-    publicados = leer_json(PUBLICADOS, {})
     token = cargar_token()["token"]
     ig_id, usuario = cuenta(token)
     log(f"Cuenta de Instagram: @{usuario}")
     esperar_urls(plan)
     ultimo = 0.0
     for post in plan:
-        if post["id"] in publicados:
-            continue
         objetivo = dt.datetime.fromisoformat(post["hora"])
         espera = (objetivo - ahora()).total_seconds()
         if espera > 0:
@@ -647,6 +706,24 @@ def publicar() -> None:
         # Aunque vayamos tarde, deja al menos 1 minuto entre posts para respetar el orden.
         if ultimo and time.time() - ultimo < 60:
             time.sleep(60 - (time.time() - ultimo))
+
+        # Candado 1: estado más reciente del repositorio, justo antes de publicar.
+        publicados = estado_fresco()
+        if post["id"] in publicados:
+            log(f"El post {post['numero']} ya consta como publicado; no se repite.")
+            continue
+        # Candado 2: orden estricto. Todos los anteriores del día tienen que estar publicados.
+        faltan = [a for a in post.get("anteriores", []) if a["id"] not in publicados]
+        if faltan:
+            resumen(f"❌ No publico el post {post['numero']}: antes falta el post {faltan[0]['numero']} «{faltan[0]['nombre']}».")
+            sys.exit(1)
+        # Candado 3: ¿ya está en Instagram con el mismo texto (por ejemplo, subido a mano)?
+        existente = ya_en_instagram(post, ig_id, token)
+        if existente:
+            resumen(f"ℹ️ El post {post['numero']} «{post['nombre']}» ya está en Instagram; lo anoto y no lo repito.")
+            registrar_publicado(post, existente, "detectado en Instagram")
+            continue
+
         log(f"Publicando {post['numero']} · {post['tipo']} · {post['nombre']}")
         try:
             media_id = publicar_un_post(post, ig_id, token)
@@ -655,11 +732,21 @@ def publicar() -> None:
             resumen("Se detiene aquí para no publicar los siguientes fuera de orden.")
             sys.exit(1)
         ultimo = time.time()
-        publicados[post["id"]] = {"nombre": post["nombre"], "semana": post["semana"], "fecha": post["fecha"],
-                                  "media_id": media_id, "publicado": ahora().isoformat(timespec="seconds")}
-        escribir_json(PUBLICADOS, publicados)
-        guardar_en_repo(f"Publicado: {post['nombre']}", PUBLICADOS)
+        try:
+            registrar_publicado(post, media_id)
+        except Exception as e:
+            # Si no se puede anotar, se detiene todo: mejor no seguir que arriesgar un duplicado.
+            resumen(f"❌ Publiqué el post {post['numero']} pero no pude anotarlo ({e}). Me detengo por seguridad.")
+            sys.exit(1)
         resumen(f"✅ {ahora():%H:%M} · publicado {post['numero']} «{post['nombre']}»")
+
+
+def registrar_publicado(post: dict, media_id: str, nota: str | None = None) -> None:
+    entrada = {"nombre": post["nombre"], "semana": post["semana"], "fecha": post["fecha"],
+               "media_id": media_id, "publicado": ahora().isoformat(timespec="seconds")}
+    if nota:
+        entrada["nota"] = nota
+    guardar_en_repo(f"Publicado: {post['nombre']}", PUBLICADOS, cambio=lambda d: d.__setitem__(post["id"], entrada))
 
 
 def probar_preparar() -> None:

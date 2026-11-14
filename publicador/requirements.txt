@@ -1,0 +1,6 @@
+google-api-python-client==2.*
+google-auth==2.*
+requests==2.*
+Pillow==11.*
+pillow-heif==0.*
+cryptography==44.*

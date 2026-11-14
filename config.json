@@ -1,0 +1,10 @@
+{
+  "drive_carpeta_raiz": "14MP4aM7UiUhhphFwnMDG3abVBmYrGzHs",
+  "semanas_activas": [],
+  "zona_horaria": "America/Mexico_City",
+  "horas": ["10:00", "10:05", "10:10"],
+  "minutos_entre_posts": 5,
+  "color_franjas": "#FFFFFF",
+  "pages_url": "https://alex3sarch-design.github.io/aarm-publicador",
+  "api_version": "v26.0"
+}

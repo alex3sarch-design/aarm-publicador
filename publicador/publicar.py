@@ -265,6 +265,22 @@ def leer_texto(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").strip()
 
 
+MARCA_TEXTO = "TEXTO PARA PUBLICAR"
+
+
+def caption(texto: str) -> str:
+    """Del descripcion.txt solo se publica lo que va después de la línea «TEXTO PARA PUBLICAR»."""
+    lineas = texto.split("\n")
+    for i, l in enumerate(lineas):
+        if sin_acentos(l).strip().strip(":").upper() == MARCA_TEXTO:
+            return "\n".join(lineas[i + 1:]).strip()
+    return texto.strip()
+
+
+def tiene_marca(texto: str) -> bool:
+    return any(sin_acentos(l).strip().strip(":").upper() == MARCA_TEXTO for l in texto.split("\n"))
+
+
 def tipo_de(medios: list[dict]) -> str:
     if len(medios) == 1:
         return "REEL" if Path(medios[0]["name"]).suffix.lower() in EXT_VIDEO else "IMAGEN"
@@ -559,9 +575,12 @@ def preparar() -> None:
             raise RuntimeError(f"El post «{p['nombre']}» no tiene imágenes ni video.")
         if len(c["medios"]) > 10:
             raise RuntimeError(f"El carrusel «{p['nombre']}» tiene {len(c['medios'])} archivos; Instagram admite 10.")
-        texto = leer_texto(descargar(c["texto"][0]["id"])) if c["texto"] else ""
+        bruto = leer_texto(descargar(c["texto"][0]["id"])) if c["texto"] else ""
+        texto = caption(bruto)
         if not c["texto"]:
             resumen(f"⚠️ «{p['nombre']}» no tiene descripcion.txt; se publicará sin texto.")
+        elif not tiene_marca(bruto):
+            resumen(f"⚠️ «{p['nombre']}»: su texto no tiene la línea «TEXTO PARA PUBLICAR»; se publica completo.")
         if len(texto) > 2200:
             raise RuntimeError(f"El texto de «{p['nombre']}» tiene {len(texto)} caracteres; Instagram admite 2200.")
         medios = []
@@ -690,7 +709,7 @@ def vista() -> None:
     salida_lista = []
     for p in posts:
         c = contenido_post(p["id"])
-        texto = leer_texto(descargar(c["texto"][0]["id"])) if c["texto"] else ""
+        texto = caption(leer_texto(descargar(c["texto"][0]["id"]))) if c["texto"] else ""
         miniaturas = []
         for m in c["medios"][:10]:
             es_video = Path(m["name"]).suffix.lower() in EXT_VIDEO
@@ -747,8 +766,11 @@ def revisar() -> None:
         if not c["texto"]:
             notas.append("sin descripcion.txt")
         else:
-            n = len(leer_texto(descargar(c["texto"][0]["id"])))
+            bruto = leer_texto(descargar(c["texto"][0]["id"]))
+            n = len(caption(bruto))
             notas.append(f"texto {n} caracteres")
+            if not tiene_marca(bruto):
+                notas.append("⚠️ sin línea «TEXTO PARA PUBLICAR» (se publicaría el archivo completo)"); problemas += 1
             if n > 2200:
                 notas.append("texto demasiado largo (máx. 2200)"); problemas += 1
         if c["medios"] and not Path(c["medios"][0]["name"]).suffix.lower() in EXT_VIDEO:

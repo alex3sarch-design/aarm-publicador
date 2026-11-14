@@ -1,6 +1,6 @@
 {
   "drive_carpeta_raiz": "14MP4aM7UiUhhphFwnMDG3abVBmYrGzHs",
-  "semanas_activas": [],
+  "semanas_activas": ["Semana 05"],
   "zona_horaria": "America/Mexico_City",
   "horas": ["10:00", "10:05", "10:10"],
   "minutos_entre_posts": 5,

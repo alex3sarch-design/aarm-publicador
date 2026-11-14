@@ -38,7 +38,8 @@ hora, tipo, número de archivos y largo del texto, sin publicar nada.
 
 | Nombre | Qué es |
 |---|---|
-| `IG_TOKEN` | Permiso de Instagram (app de Meta, *API setup with Instagram Login*). Se renueva solo. |
+| `IG_TOKEN` | Permiso de Instagram de la app de Meta. Si es de *Unified login* (usuario del sistema) no caduca; si es de *Instagram Login* (empieza con `IG`) se renueva solo. |
 | `GOOGLE_SA_JSON` | Llave JSON de la cuenta de servicio de Google con acceso de lectura a la carpeta de Drive. |
 
-El permiso de Instagram renovado se guarda cifrado en `estado/token.enc`.
+Si el permiso es de *Instagram Login*, la versión renovada se guarda cifrada en `estado/token.enc`.
+Con *Unified login* el publicador busca la cuenta sola; si no la encuentra, se pone su id en `config.json` → `ig_user_id`.

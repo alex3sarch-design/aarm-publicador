@@ -6,5 +6,6 @@
   "minutos_entre_posts": 5,
   "color_franjas": "#FFFFFF",
   "pages_url": "https://alex3sarch-design.github.io/aarm-publicador",
-  "api_version": "v26.0"
+  "api_version": "v26.0",
+  "ig_user_id": ""
 }

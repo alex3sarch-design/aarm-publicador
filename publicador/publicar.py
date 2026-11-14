@@ -39,7 +39,17 @@ PUBLICADOS = ESTADO_DIR / "publicados.json"
 TOKEN_ENC = ESTADO_DIR / "token.enc"
 SITE = RAIZ / "_site"
 PLAN = RAIZ / "_trabajo" / "plan.json"
-API = f"https://graph.instagram.com/{CONFIG.get('api_version', 'v26.0')}"
+VERSION = CONFIG.get("api_version", "v26.0")
+
+
+def es_token_instagram(token: str) -> bool:
+    """Los tokens de "Instagram Login" empiezan con IG; los de Unified login (usuario del sistema), no."""
+    return token.startswith("IG")
+
+
+def api_base(token: str) -> str:
+    host = "graph.instagram.com" if es_token_instagram(token) else "graph.facebook.com"
+    return f"https://{host}/{VERSION}"
 
 EXT_IMAGEN = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff", ".bmp"}
 EXT_VIDEO = {".mp4", ".mov", ".m4v"}
@@ -358,6 +368,11 @@ def guardar_token(datos: dict) -> None:
 
 def mantener() -> None:
     datos = cargar_token()
+    if not es_token_instagram(datos["token"]):
+        # Token de usuario del sistema (Unified login): no caduca. Solo se comprueba que siga válido.
+        cuenta(datos["token"])
+        log("Permiso de Instagram (usuario del sistema) válido; no necesita renovarse.")
+        return
     obtenido = dt.datetime.fromisoformat(datos["obtenido"]) if datos.get("obtenido") else None
     if obtenido is None:
         # Permiso recién guardado en GitHub: se anota y se renueva dentro de 3 días
@@ -398,7 +413,7 @@ class ErrorIG(Exception):
 
 
 def ig(metodo: str, ruta: str, token: str, **params) -> dict:
-    url = f"{API}/{ruta}"
+    url = f"{api_base(token)}/{ruta}"
     for intento in range(3):
         try:
             if metodo == "GET":
@@ -422,6 +437,29 @@ def ig(metodo: str, ruta: str, token: str, **params) -> dict:
             continue
         raise ErrorIG(j)
     raise ErrorIG("Sin respuesta de Instagram")
+
+
+def cuenta(token: str) -> tuple[str, str]:
+    """Devuelve (id de la cuenta de Instagram, usuario) según el tipo de token."""
+    if es_token_instagram(token):
+        yo = ig("GET", "me", token, fields="user_id,username")
+        return str(yo.get("user_id") or yo.get("id")), yo.get("username", "")
+    fijo = str(CONFIG.get("ig_user_id") or "").strip()
+    if fijo:
+        info = ig("GET", fijo, token, fields="id,username")
+        return fijo, info.get("username", "")
+    try:
+        datos = ig("GET", "me/assigned_instagram_accounts", token, fields="id,username").get("data", [])
+        if datos:
+            return str(datos[0]["id"]), datos[0].get("username", "")
+    except ErrorIG:
+        pass
+    paginas = ig("GET", "me/accounts", token, fields="instagram_business_account{id,username}").get("data", [])
+    for pg in paginas:
+        iba = pg.get("instagram_business_account")
+        if iba:
+            return str(iba["id"]), iba.get("username", "")
+    raise ErrorIG("No encontré la cuenta de Instagram con este permiso; agrega su id en config.json → ig_user_id.")
 
 
 def esperar_contenedor(cid: str, token: str, minutos: int) -> None:
@@ -575,9 +613,7 @@ def publicar() -> None:
         return
     publicados = leer_json(PUBLICADOS, {})
     token = cargar_token()["token"]
-    ig_id = ig("GET", "me", token, fields="user_id,username")
-    usuario = ig_id.get("username")
-    ig_id = ig_id.get("user_id") or ig_id.get("id")
+    ig_id, usuario = cuenta(token)
     log(f"Cuenta de Instagram: @{usuario}")
     esperar_urls(plan)
     ultimo = 0.0
@@ -629,9 +665,8 @@ def probar() -> None:
     """Comprueba el permiso y si Instagram acepta 3:4. Crea contenedores pero NUNCA publica."""
     plan = leer_json(PLAN, [])
     token = cargar_token()["token"]
-    yo = ig("GET", "me", token, fields="user_id,username")
-    ig_id = yo.get("user_id") or yo.get("id")
-    resumen(f"✅ Permiso válido para @{yo.get('username')}")
+    ig_id, usuario = cuenta(token)
+    resumen(f"✅ Permiso válido para @{usuario} (id {ig_id}, {'Instagram Login' if es_token_instagram(token) else 'usuario del sistema'})")
     try:
         lim = ig("GET", f"{ig_id}/content_publishing_limit", token, fields="quota_usage,config")
         resumen(f"✅ Permiso de publicación activo (uso en 24 h: {lim.get('data', [{}])[0].get('quota_usage', '?')})")

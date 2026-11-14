@@ -359,17 +359,21 @@ def guardar_token(datos: dict) -> None:
 def mantener() -> None:
     datos = cargar_token()
     obtenido = dt.datetime.fromisoformat(datos["obtenido"]) if datos.get("obtenido") else None
-    if obtenido and ahora() - obtenido < dt.timedelta(days=3):
+    if obtenido is None:
+        # Permiso recién guardado en GitHub: se anota y se renueva dentro de 3 días
+        # (Instagram no deja renovar uno con menos de 24 h).
+        datos["obtenido"] = ahora().isoformat()
+        guardar_token(datos)
+        guardar_en_repo("Registrar permiso de Instagram", TOKEN_ENC)
+        log("Permiso de Instagram nuevo registrado.")
+        return
+    if ahora() - obtenido < dt.timedelta(days=3):
         log(f"Permiso de Instagram vigente (renovado {obtenido:%Y-%m-%d}).")
         return
     r = requests.get("https://graph.instagram.com/refresh_access_token",
                      params={"grant_type": "ig_refresh_token", "access_token": datos["token"]}, timeout=60)
     if r.status_code != 200:
         msg = r.text[:500]
-        # Un token recién creado (menos de 24 h) todavía no se puede renovar: no es un error.
-        if obtenido is None and "24" in msg:
-            log("El permiso es muy reciente para renovarse; se intentará mañana.")
-            return
         raise RuntimeError(f"No se pudo renovar el permiso de Instagram: {msg}")
     j = r.json()
     datos.update(token=j["access_token"], obtenido=ahora().isoformat(),
@@ -603,6 +607,47 @@ def publicar() -> None:
         resumen(f"✅ {ahora():%H:%M} · publicado {post['numero']} «{post['nombre']}»")
 
 
+def probar_preparar() -> None:
+    """Genera una imagen de prueba 3:4 en _site/ (no toca Drive)."""
+    clave = secrets.token_hex(16)
+    destino = SITE / clave
+    destino.mkdir(parents=True, exist_ok=True)
+    (SITE / "index.html").write_text("", encoding="utf-8")
+    img = Image.new("RGB", (1080, 1440), (233, 226, 216))
+    b = io.BytesIO()
+    img.save(b, "JPEG", quality=90)
+    (destino / "prueba_3x4.jpg").write_bytes(b.getvalue())
+    original, franjas, _ = a_jpeg(b.getvalue())
+    (destino / "prueba_4x5.jpg").write_bytes(franjas or original)
+    base = CONFIG["pages_url"].rstrip("/") + f"/{clave}"
+    escribir_json(PLAN, [{"prueba": True, "medios": [{"url": f"{base}/prueba_3x4.jpg"},
+                                                     {"url": f"{base}/prueba_4x5.jpg"}]}])
+    salida("hay", "true")
+
+
+def probar() -> None:
+    """Comprueba el permiso y si Instagram acepta 3:4. Crea contenedores pero NUNCA publica."""
+    plan = leer_json(PLAN, [])
+    token = cargar_token()["token"]
+    yo = ig("GET", "me", token, fields="user_id,username")
+    ig_id = yo.get("user_id") or yo.get("id")
+    resumen(f"✅ Permiso válido para @{yo.get('username')}")
+    try:
+        lim = ig("GET", f"{ig_id}/content_publishing_limit", token, fields="quota_usage,config")
+        resumen(f"✅ Permiso de publicación activo (uso en 24 h: {lim.get('data', [{}])[0].get('quota_usage', '?')})")
+    except ErrorIG as e:
+        resumen(f"⚠️ No pude consultar el límite de publicación: {e}")
+    esperar_urls(plan)
+    u34, u45 = (m["url"] for m in plan[0]["medios"])
+    for nombre, url in (("3:4 (1080×1440)", u34), ("4:5 con franjas", u45)):
+        try:
+            cid = ig("POST", f"{ig_id}/media", token, image_url=url, caption="prueba")["id"]
+            esperar_contenedor(cid, token, 3)
+            resumen(f"✅ Instagram ACEPTA {nombre} (contenedor de prueba {cid}, no se publicó)")
+        except ErrorIG as e:
+            resumen(f"❌ Instagram RECHAZA {nombre}: {e}")
+
+
 def revisar() -> None:
     """Revisa todas las semanas activas sin publicar: fechas, tipos, textos y proporciones."""
     publicados = leer_json(PUBLICADOS, {})
@@ -646,7 +691,8 @@ def revisar() -> None:
 
 if __name__ == "__main__":
     comando = sys.argv[1] if len(sys.argv) > 1 else ""
-    acciones = {"mantener": mantener, "preparar": preparar, "publicar": publicar, "revisar": revisar}
+    acciones = {"mantener": mantener, "preparar": preparar, "publicar": publicar, "revisar": revisar,
+                "probar-preparar": probar_preparar, "probar": probar}
     if comando not in acciones:
         print(__doc__)
         sys.exit(2)

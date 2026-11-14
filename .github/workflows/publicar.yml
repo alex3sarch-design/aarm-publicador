@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       modo:
-        description: "normal = publica lo de hoy · revisar = solo revisa las semanas activas"
+        description: "revisar = solo revisa las semanas activas · probar = prueba el permiso de Instagram sin publicar · normal = publica lo de hoy"
         type: choice
-        options: [revisar, normal]
+        options: [revisar, probar, normal]
         default: revisar
       fecha:
         description: "Solo para revisar: fecha AAAA-MM-DD (vacío = hoy)"
@@ -50,7 +50,7 @@ jobs:
         run: python publicador/publicar.py revisar
 
   publicar:
-    if: github.event_name == 'schedule' || inputs.modo == 'normal'
+    if: github.event_name == 'schedule' || inputs.modo == 'normal' || inputs.modo == 'probar'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment:
@@ -74,10 +74,11 @@ jobs:
           git config user.name "aarm-publicador"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Mantener permiso de Instagram
+        if: inputs.modo != 'probar'
         run: python publicador/publicar.py mantener
       - name: Preparar posts de hoy
         id: prep
-        run: python publicador/publicar.py preparar
+        run: python publicador/publicar.py ${{ inputs.modo == 'probar' && 'probar-preparar' || 'preparar' }}
       - name: Configurar GitHub Pages
         if: steps.prep.outputs.hay == 'true'
         uses: actions/configure-pages@v5
@@ -91,7 +92,7 @@ jobs:
         uses: actions/deploy-pages@v4
       - name: Publicar en Instagram (en orden)
         if: steps.prep.outputs.hay == 'true'
-        run: python publicador/publicar.py publicar
+        run: python publicador/publicar.py ${{ inputs.modo == 'probar' && 'probar' || 'publicar' }}
 
   limpiar:
     # Retira las imágenes de la dirección pública cuando ya se publicaron (o si algo falló).

@@ -66,11 +66,14 @@ jobs:
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
           SEMANA_REVISAR: ${{ inputs.semana }}
         run: python publicador/publicar.py vista
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vista
-          path: _vista/vista.json
-          retention-days: 3
+      - name: Entregar vista (rama temporal "vista")
+        run: |
+          cd _vista
+          git init -q -b vista
+          git config user.name "aarm-publicador"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vista.json && git commit -q -m "Vista previa"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" vista
 
   publicar:
     if: github.event_name == 'schedule' || inputs.modo == 'normal' || inputs.modo == 'probar'

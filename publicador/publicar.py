@@ -685,6 +685,9 @@ def probar() -> None:
 
 def revisar() -> None:
     """Revisa todas las semanas activas sin publicar: fechas, tipos, textos y proporciones."""
+    if not CONFIG.get("semanas_activas"):
+        resumen("No hay semanas activas todavía; nada que revisar.")
+        return
     publicados = leer_json(PUBLICADOS, {})
     posts, avisos = posts_de_semanas()
     resumen(f"## Revisión de semanas activas: {', '.join(CONFIG.get('semanas_activas', [])) or '(ninguna)'}")

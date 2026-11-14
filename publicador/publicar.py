@@ -33,6 +33,9 @@ from PIL import Image, ImageOps
 
 RAIZ = Path(__file__).resolve().parent.parent
 CONFIG = json.loads((RAIZ / "config.json").read_text(encoding="utf-8"))
+if os.environ.get("SEMANA_REVISAR", "").strip():
+    # Revisión puntual de una semana sin activarla.
+    CONFIG["semanas_activas"] = [os.environ["SEMANA_REVISAR"].strip()]
 TZ = ZoneInfo(CONFIG["zona_horaria"])
 ESTADO_DIR = RAIZ / "estado"
 PUBLICADOS = ESTADO_DIR / "publicados.json"
@@ -93,9 +96,6 @@ def ahora() -> dt.datetime:
 
 
 def hoy() -> dt.date:
-    forzada = os.environ.get("FECHA_REVISAR", "").strip()
-    if forzada:
-        return dt.date.fromisoformat(forzada)
     return ahora().date()
 
 

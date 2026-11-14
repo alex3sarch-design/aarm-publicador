@@ -16,8 +16,8 @@ on:
         type: choice
         options: [revisar, probar, normal]
         default: revisar
-      fecha:
-        description: "Solo para revisar: fecha AAAA-MM-DD (vacío = hoy)"
+      semana:
+        description: "Solo para revisar: semana a revisar sin activarla (ej. Semana 05). Vacío = las activas"
         required: false
         default: ""
 
@@ -46,7 +46,7 @@ jobs:
       - name: Revisar semanas activas
         env:
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
-          FECHA_REVISAR: ${{ inputs.fecha }}
+          SEMANA_REVISAR: ${{ inputs.semana }}
         run: python publicador/publicar.py revisar
 
   publicar:

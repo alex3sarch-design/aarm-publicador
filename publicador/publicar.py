@@ -35,7 +35,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 CONFIG = json.loads((RAIZ / "config.json").read_text(encoding="utf-8"))
 if os.environ.get("SEMANA_REVISAR", "").strip():
     # Revisión puntual de una semana sin activarla.
-    CONFIG["semanas_activas"] = [os.environ["SEMANA_REVISAR"].strip()]
+    CONFIG["semanas_activas"] = [s.strip() for s in os.environ["SEMANA_REVISAR"].split(",") if s.strip()]
 TZ = ZoneInfo(CONFIG["zona_horaria"])
 ESTADO_DIR = RAIZ / "estado"
 PUBLICADOS = ESTADO_DIR / "publicados.json"
@@ -683,6 +683,44 @@ def probar() -> None:
             resumen(f"❌ Instagram RECHAZA {nombre}: {e}")
 
 
+def vista() -> None:
+    """Genera _vista/vista.json con miniaturas y textos de las semanas indicadas (no publica nada)."""
+    publicados = leer_json(PUBLICADOS, {})
+    posts, avisos = posts_de_semanas()
+    salida_lista = []
+    for p in posts:
+        c = contenido_post(p["id"])
+        texto = leer_texto(descargar(c["texto"][0]["id"])) if c["texto"] else ""
+        miniaturas = []
+        for m in c["medios"][:10]:
+            es_video = Path(m["name"]).suffix.lower() in EXT_VIDEO
+            b64 = None
+            try:
+                info = drive().files().get(fileId=m["id"], fields="thumbnailLink", supportsAllDrives=True).execute()
+                link = info.get("thumbnailLink")
+                if link:
+                    r = requests.get(re.sub(r"=s\d+$", "=s720", link), timeout=60)
+                    if r.ok:
+                        im = Image.open(io.BytesIO(r.content)).convert("RGB")
+                        im.thumbnail((540, 720))
+                        b = io.BytesIO(); im.save(b, "JPEG", quality=82)
+                        b64 = base64.b64encode(b.getvalue()).decode()
+                if b64 is None and not es_video:
+                    im = Image.open(io.BytesIO(descargar(m["id"]))).convert("RGB")
+                    im.thumbnail((540, 720))
+                    b = io.BytesIO(); im.save(b, "JPEG", quality=82)
+                    b64 = base64.b64encode(b.getvalue()).decode()
+            except Exception as e:  # una miniatura que falla no detiene la vista
+                log(f"Sin miniatura para {m['name']}: {e}")
+            miniaturas.append({"archivo": m["name"], "video": es_video, "jpg": b64})
+        salida_lista.append({**p, "tipo": tipo_de(c["medios"]) if c["medios"] else "?", "texto": texto,
+                             "medios": miniaturas, "publicado": p["id"] in publicados,
+                             "hora": hora_de_slot(dt.date.fromisoformat(p["fecha"]), p["slot"]).strftime("%H:%M")})
+        log(f"Vista: {p['nombre']}")
+    escribir_json(RAIZ / "_vista" / "vista.json", {"generado": ahora().isoformat(), "avisos": avisos,
+                                                   "posts": salida_lista})
+
+
 def revisar() -> None:
     """Revisa todas las semanas activas sin publicar: fechas, tipos, textos y proporciones."""
     if not CONFIG.get("semanas_activas"):
@@ -730,7 +768,7 @@ def revisar() -> None:
 if __name__ == "__main__":
     comando = sys.argv[1] if len(sys.argv) > 1 else ""
     acciones = {"mantener": mantener, "preparar": preparar, "publicar": publicar, "revisar": revisar,
-                "probar-preparar": probar_preparar, "probar": probar}
+                "probar-preparar": probar_preparar, "probar": probar, "vista": vista}
     if comando not in acciones:
         print(__doc__)
         sys.exit(2)

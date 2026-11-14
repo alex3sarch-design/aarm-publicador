@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       modo:
-        description: "revisar = solo revisa las semanas activas · probar = prueba el permiso de Instagram sin publicar · normal = publica lo de hoy"
+        description: "revisar = solo revisa las semanas activas · vista = genera vista previa · probar = prueba el permiso de Instagram sin publicar · normal = publica lo de hoy"
         type: choice
-        options: [revisar, probar, normal]
+        options: [revisar, vista, probar, normal]
         default: revisar
       semana:
         description: "Solo para revisar: semana a revisar sin activarla (ej. Semana 05). Vacío = las activas"
@@ -48,6 +48,29 @@ jobs:
           GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
           SEMANA_REVISAR: ${{ inputs.semana }}
         run: python publicador/publicar.py revisar
+
+  vista:
+    if: inputs.modo == 'vista'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: publicador/requirements.txt
+      - run: pip install -r publicador/requirements.txt
+      - name: Generar vista previa
+        env:
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+          SEMANA_REVISAR: ${{ inputs.semana }}
+        run: python publicador/publicar.py vista
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vista
+          path: _vista/vista.json
+          retention-days: 3
 
   publicar:
     if: github.event_name == 'schedule' || inputs.modo == 'normal' || inputs.modo == 'probar'

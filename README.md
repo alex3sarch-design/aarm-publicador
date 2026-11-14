@@ -8,7 +8,7 @@ Publica automáticamente en el Instagram de **@aarm.arquitectos** lo que hay en 
 1. En Drive cada semana tiene sus filas, y cada post es una carpeta con sus imágenes o su video y un `descripcion.txt`:
    `Semana 05 - … / Fila 1 / 1 - Mar 17 nov 2026 - … / (15-01.png, 15-02.png, …, descripcion.txt)`
 2. El número y la fecha salen del nombre de la carpeta del post (`1 - Mar 17 nov 2026 - …`).
-3. Todos los días a las 9:30 a. m. (Ciudad de México) GitHub revisa si hay posts con la fecha de hoy
+3. Todos los días a las 9:07 a. m. (Ciudad de México) GitHub revisa si hay posts con la fecha de hoy
    en las **semanas activas** (`config.json` → `semanas_activas`) y los publica en orden:
    el post 1 a las 10:00, el 2 a las 10:05 y el 3 a las 10:10. Si hay un cuarto, sale a las 10:15.
 4. El 2 solo sale cuando Instagram confirma el 1, y así sucesivamente. Si uno falla, se detiene ahí

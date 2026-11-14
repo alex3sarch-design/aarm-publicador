@@ -3,7 +3,7 @@ name: Publicar en Instagram
 on:
   schedule:
     # Horas en UTC. Ciudad de México = UTC-6 todo el año.
-    - cron: "30 15 * * *"   # 9:30 a. m.: prepara y publica a las 10:00 / 10:05 / 10:10
+    - cron: "7 15 * * *"    # 9:07 a. m.: prepara y espera hasta las 10:00 / 10:05 / 10:10 (GitHub a veces arranca hasta 40 min tarde)
     - cron: "35 16 * * *"   # 10:35 a. m.: respaldo por si la de las 9:30 no corrió
     - cron: "35 18 * * *"   # 12:35 p. m.: segundo respaldo
   push:

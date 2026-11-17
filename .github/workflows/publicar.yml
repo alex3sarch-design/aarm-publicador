@@ -3,7 +3,10 @@ name: Publicar en Instagram
 on:
   schedule:
     # Horas en UTC. Ciudad de México = UTC-6 todo el año.
-    - cron: "7 15 * * *"    # 9:07 a. m.: prepara y espera hasta las 10:00 / 10:05 / 10:10 (GitHub a veces arranca hasta 40 min tarde)
+    - cron: "37 13 * * *"   # 7:37 a. m. ┐ GitHub a veces arranca con 30-100 min de retraso:
+    - cron: "7 14 * * *"    # 8:07 a. m. │ varias salidas tempranas; la primera que arranca espera
+    - cron: "37 14 * * *"   # 8:37 a. m. │ hasta las 10:00 / 10:05 / 10:10 y las demás ya no
+    - cron: "7 15 * * *"    # 9:07 a. m. ┘ publican nada (el registro y el orden lo impiden)
     - cron: "35 16 * * *"   # 10:35 a. m.: respaldo por si la de las 9:30 no corrió
     - cron: "35 18 * * *"   # 12:35 p. m.: segundo respaldo
   push:
@@ -78,7 +81,7 @@ jobs:
   publicar:
     if: github.event_name == 'schedule' || inputs.modo == 'normal' || inputs.modo == 'probar'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 200
     environment:
       name: github-pages
     outputs:

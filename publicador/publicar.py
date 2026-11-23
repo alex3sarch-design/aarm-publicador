@@ -466,7 +466,7 @@ class ErrorIG(Exception):
 
 def ig(metodo: str, ruta: str, token: str, reintentar: bool = True, **params) -> dict:
     url = f"{api_base(token)}/{ruta}"
-    intentos = 3 if reintentar else 1
+    intentos = 4 if reintentar else 1
     for intento in range(intentos):
         try:
             if metodo == "GET":
@@ -485,8 +485,11 @@ def ig(metodo: str, ruta: str, token: str, reintentar: bool = True, **params) ->
         if r.status_code == 200 and "error" not in j:
             return j
         err = j.get("error", {})
-        if err.get("is_transient") and intento < intentos - 1:
-            time.sleep(20)
+        # 2207003 = Instagram tardó demasiado en descargar la imagen/video: reintentar es seguro
+        # (solo ocurre al subir, nunca al publicar, y media_publish no se reintenta aquí).
+        descarga_lenta = err.get("error_subcode") in (2207003,) or err.get("code") == -2
+        if (err.get("is_transient") or descarga_lenta) and intento < intentos - 1:
+            time.sleep(30 if descarga_lenta else 20)
             continue
         raise ErrorIG(j)
     raise ErrorIG("Sin respuesta de Instagram")

@@ -125,7 +125,23 @@ jobs:
         with:
           path: _site
       - name: Publicar imágenes temporalmente
+        id: deploy1
         if: steps.prep.outputs.hay == 'true'
+        continue-on-error: true   # GitHub a veces no "ve" el paquete recién subido; se reintenta
+        uses: actions/deploy-pages@v4
+      - name: Esperar antes de reintentar
+        if: steps.prep.outputs.hay == 'true' && steps.deploy1.outcome == 'failure'
+        run: sleep 45
+      - name: Publicar imágenes temporalmente (2.º intento)
+        id: deploy2
+        if: steps.prep.outputs.hay == 'true' && steps.deploy1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Esperar antes del último intento
+        if: steps.prep.outputs.hay == 'true' && steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        run: sleep 90
+      - name: Publicar imágenes temporalmente (3.er intento)
+        if: steps.prep.outputs.hay == 'true' && steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
         uses: actions/deploy-pages@v4
       - name: Publicar en Instagram (en orden)
         if: steps.prep.outputs.hay == 'true'

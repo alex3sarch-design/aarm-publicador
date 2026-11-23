@@ -96,6 +96,9 @@ def ahora() -> dt.datetime:
 
 
 def hoy() -> dt.date:
+    ensayo = os.environ.get("FECHA_ENSAYO", "").strip()
+    if os.environ.get("ENSAYO") == "true" and ensayo:
+        return dt.date.fromisoformat(ensayo)
     return ahora().date()
 
 
@@ -687,10 +690,39 @@ def esperar_urls(plan: list[dict]) -> None:
         raise RuntimeError(f"Las imágenes no están disponibles en GitHub Pages: {pendientes[:3]}")
 
 
+def ensayar(plan: list[dict]) -> None:
+    """Sube cada post de la fecha indicada como contenedor SIN publicarlo (caduca solo en 24 h)."""
+    token = cargar_token()["token"]
+    ig_id, usuario = cuenta(token)
+    resumen(f"## Ensayo sin publicar · @{usuario}")
+    esperar_urls(plan)
+    fallos = 0
+    for post in plan:
+        try:
+            hay_franjas = any(m.get("url_franjas") for m in post["medios"])
+            try:
+                cid = crear_contenedores(post, ig_id, token, usar_franjas=False)
+                forma = "tal cual"
+            except ErrorIG as e:
+                if not (hay_franjas and e.es_proporcion):
+                    raise
+                cid = crear_contenedores(post, ig_id, token, usar_franjas=True)
+                forma = "con franjas"
+            resumen(f"✅ {post['numero']} · {post['tipo']} · Instagram lo acepta {forma} (contenedor {cid}, NO publicado) · {post['nombre']}")
+        except Exception as e:
+            fallos += 1
+            resumen(f"❌ {post['numero']} · {post['tipo']} · Instagram lo rechaza: {e} · {post['nombre']}")
+    if fallos:
+        sys.exit(1)
+
+
 def publicar() -> None:
     plan = leer_json(PLAN, [])
     if not plan:
         log("No hay plan que publicar.")
+        return
+    if os.environ.get("ENSAYO") == "true":
+        ensayar(plan)
         return
     token = cargar_token()["token"]
     ig_id, usuario = cuenta(token)

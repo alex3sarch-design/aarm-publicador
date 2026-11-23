@@ -17,8 +17,12 @@ on:
       modo:
         description: "revisar = solo revisa las semanas activas · vista = genera vista previa · probar = prueba el permiso de Instagram sin publicar · normal = publica lo de hoy"
         type: choice
-        options: [revisar, vista, probar, normal]
+        options: [revisar, vista, probar, ensayo, normal]
         default: revisar
+      fecha:
+        description: "Solo para ensayo: fecha AAAA-MM-DD cuyos posts se suben a Instagram SIN publicarse"
+        required: false
+        default: ""
       semana:
         description: "Solo para revisar: semana a revisar sin activarla (ej. Semana 05). Vacío = las activas"
         required: false
@@ -79,7 +83,7 @@ jobs:
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" vista
 
   publicar:
-    if: github.event_name == 'schedule' || inputs.modo == 'normal' || inputs.modo == 'probar'
+    if: github.event_name == 'schedule' || inputs.modo == 'normal' || inputs.modo == 'probar' || inputs.modo == 'ensayo'
     runs-on: ubuntu-latest
     timeout-minutes: 200
     environment:
@@ -90,6 +94,8 @@ jobs:
       GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
       IG_TOKEN: ${{ secrets.IG_TOKEN }}
       CLAVE_TOKEN: ${{ secrets.CLAVE_TOKEN }}
+      ENSAYO: ${{ inputs.modo == 'ensayo' }}
+      FECHA_ENSAYO: ${{ inputs.fecha }}
     steps:
       - uses: actions/checkout@v4
         with:

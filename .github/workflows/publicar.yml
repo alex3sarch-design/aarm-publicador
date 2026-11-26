@@ -160,6 +160,22 @@ jobs:
         with:
           path: vacio
           name: github-pages-vacio
-      - uses: actions/deploy-pages@v4
+      - id: limpio1
+        continue-on-error: true   # GitHub a veces no "ve" el paquete recién subido; se reintenta
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-vacio
+      - if: steps.limpio1.outcome == 'failure'
+        run: sleep 45
+      - id: limpio2
+        if: steps.limpio1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-vacio
+      - if: steps.limpio1.outcome == 'failure' && steps.limpio2.outcome == 'failure'
+        run: sleep 90
+      - if: steps.limpio1.outcome == 'failure' && steps.limpio2.outcome == 'failure'
+        uses: actions/deploy-pages@v4
         with:
           artifact_name: github-pages-vacio
